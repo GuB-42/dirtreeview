@@ -25,7 +25,6 @@ struct Node : public NodePoolAlloc {
 	Node *child;
 	Node *sibling;
 	bool last_child:1;
-	bool is_new:1;
 	bool has_new_children:1;
 
 	Node *insert_node(const char *path);

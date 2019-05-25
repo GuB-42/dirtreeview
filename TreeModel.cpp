@@ -1,5 +1,7 @@
 #include "TreeModel.h"
 
+#include <algorithm>
+#include <vector>
 #include <QMutex>
 #include "Node.h"
 
@@ -19,7 +21,7 @@ int TreeModel::rowCount(const QModelIndex &parent) const
 	if (!parent_node) return 0;
 	NodeHash::const_iterator it = mNodeHash.find(parent_node);
 	if (it == mNodeHash.end()) return 0;
-	return it->children.count();
+	return it->second.children.size();
 }
 
 int TreeModel::columnCount(const QModelIndex &parent) const
@@ -35,20 +37,16 @@ QModelIndex TreeModel::index(int row, int column, const QModelIndex &parent) con
 
 	if (!parent_node) return QModelIndex();;
 	NodeHash::const_iterator it_parent = mNodeHash.find(parent_node);
-	if (it_parent == mNodeHash.end() ||
-	    row < 0 || row >= it_parent->children.count()) return QModelIndex();
-	Node *child_node = it_parent->children[row];
+	if (it_parent == mNodeHash.end() || row < 0 ||
+	    row >= (int)it_parent->second.children.size()) return QModelIndex();
+	Node *child_node = it_parent->second.children[row];
 	if (!child_node) return QModelIndex();
 	const_cast<TreeModel *>(this)->createItem(parent_node, row, child_node);
 	return createIndex(row, column, child_node);
 }
 
-void TreeModel::createItem(Node *parent, int row, Node *node)
+static void get_child_list(std::vector<Node *> *out, const Node *node)
 {
-	if (mNodeHash.contains(node)) return;
-
-	TreeModelItem item(parent, row);
-	mNodeTreeMutex->lock();
 	Node *first_node = NULL;
 	for (Node *p = node->child; p; p = p->sibling) {
 		if (p->last_child) {
@@ -57,14 +55,11 @@ void TreeModel::createItem(Node *parent, int row, Node *node)
 		}
 	}
 	if (first_node) {
-		item.children.append(first_node);
+		out->push_back(first_node);
 		for (Node *p = first_node->sibling ; p != first_node; p = p->sibling) {
-			item.children.append(p);
+			out->push_back(p);
 		}
 	}
-	node->has_new_children = false;
-	mNodeTreeMutex->unlock();
-	mNodeHash.insert(node, item);
 }
 
 QModelIndex TreeModel::parent(const QModelIndex &index) const
@@ -73,9 +68,9 @@ QModelIndex TreeModel::parent(const QModelIndex &index) const
 	Node *node = static_cast<Node *>(index.internalPointer());
 	if (!node || node == mRootNode) return QModelIndex();
 	NodeHash::const_iterator it = mNodeHash.find(node);
-	if (it == mNodeHash.end() || !it->parent ||
-	    it->parent == mRootNode) return QModelIndex();
-	return createIndex(it->row, 0, it->parent);
+	if (it == mNodeHash.end() || !it->second.parent ||
+	    it->second.parent == mRootNode) return QModelIndex();
+	return createIndex(it->second.row, 0, it->second.parent);
 }
 
 QVariant TreeModel::data(const QModelIndex &index, int role) const
@@ -101,101 +96,68 @@ Qt::ItemFlags TreeModel::flags(const QModelIndex &index) const
 	return Qt::ItemIsSelectable | Qt::ItemIsEnabled;
 }
 
-void TreeModel::insertNodes(Node *node, TreeModelItem *item,
-                            const QVector<Node *> &new_child_list, int idx)
+void TreeModel::createItem(Node *parent, int row, Node *node)
 {
-	if (new_child_list.isEmpty()) return;
-	QModelIndex p_index =
-		node == mRootNode ? QModelIndex() : createIndex(item->row, 0, node);
-	beginInsertRows(p_index, idx, idx + new_child_list.count() - 1);
-	if (idx < item->children.count()) {
-		item->children.insert(idx, new_child_list.count(), NULL);
-		for (int i = 0; i < new_child_list.count(); ++i) {
-			item->children[idx + i] = new_child_list[i];
-		}
-		for (int i = idx + new_child_list.count();
-		     i < item->children.count(); ++i) {
-			NodeHash::iterator it =
-				mNodeHash.find(item->children[i]);
-			if (it != mNodeHash.end()) it->row = i;
-		}
-	} else {
-		item->children << new_child_list;
-	}
-	endInsertRows();
-}
+	if (mNodeHash.find(node) != mNodeHash.end()) return;
 
-void TreeModel::updateNode(Node *node)
-{
-	NodeHash::iterator it = mNodeHash.find(node);
-	if (it != mNodeHash.end() && node->has_new_children) {
-		Node *first_node = NULL;
-		for (Node *p = node->child; p; p = p->sibling) {
-			if (p->last_child) {
-				first_node = p->sibling;
-				break;
-			}
-		}
-
-		if (first_node) {
-			QVector<Node *> to_insert;
-			int idx = 0;
-			bool first = true;
-			Node *p = first_node;
-			while (first || p != first_node) {
-				if (idx < it->children.count() && it->children[idx] == p) {
-					insertNodes(node, &*it, to_insert, idx);
-					idx += to_insert.count();
-					to_insert.clear();
-					updateNode(p);
-					++idx;
-				} else {
-					to_insert.append(p);
-				}
-				p = p->sibling;
-				first = false;
-			}
-			insertNodes(node, &*it, to_insert, idx);
-		}
-		node->has_new_children = false;
-	}
+	TreeModelItem item(parent, row);
+	mNodeTreeMutex->lock();
+	get_child_list(&item.children, node);
+	node->has_new_children = false;
+	mNodeTreeMutex->unlock();
+	mNodeHash.insert(std::make_pair(node, item));
 }
 
 void TreeModel::updateTree()
 {
+	bool needed;
 	mNodeTreeMutex->lock();
-	updateNode(mRootNode);
+	needed = mRootNode->has_new_children;
 	mNodeTreeMutex->unlock();
+	if (needed) updateNode(mRootNode);
 }
 
-void TreeModel::printItem(const Node *node) const
+void TreeModel::updateNode(Node *node)
 {
-	QString path;
-	const Node *p = node;
-	while (p) {
-		path.insert(0, p->name);
-		NodeHash::const_iterator it = mNodeHash.find(p);
-		if (it == mNodeHash.end()) {
-			path.insert(0, "<?>/");
+	NodeHash::iterator node_it = mNodeHash.find(node);
+	if (node_it == mNodeHash.end()) return;
+	TreeModelItem &item = node_it->second;
+
+	std::vector<Node *> new_children;
+	mNodeTreeMutex->lock();
+	get_child_list(&new_children, node);
+	std::vector<bool> has_new_children(new_children.size());
+	for (int i = 0; i < (int)new_children.size(); ++i) {
+		has_new_children[i] = new_children[i]->has_new_children;
+	}
+	node->has_new_children = false;
+	mNodeTreeMutex->unlock();
+
+	QModelIndex p_index =
+		node == mRootNode ? QModelIndex() : createIndex(item.row, 0, node);
+	int idx = 0;
+	while (idx < (int)item.children.size()) {
+		if (item.children[idx] == new_children[idx]) {
+			if (has_new_children[idx]) updateNode(item.children[idx]);
+			++idx;
 		} else {
-			path.insert(0, QString("[%1]/").arg(it->row));
-			p = it->parent;
+			int idx2 = idx + 1;
+			while (item.children[idx] != new_children[idx2]) ++idx2;
+			beginInsertRows(p_index, idx, idx2 - 1);
+			item.children.insert(item.children.begin() + idx,
+			                     new_children.begin() + idx,
+			                     new_children.begin() + idx2);
+			for (int i = idx2; i < (int)item.children.size(); ++i) {
+				NodeHash::iterator child_it = mNodeHash.find(item.children[i]);
+				if (child_it != mNodeHash.end()) child_it->second.row = i;
+			}
+			endInsertRows();
+			idx = idx2;
 		}
 	}
-	printf("%s\n", qPrintable(path));
-	NodeHash::const_iterator it = mNodeHash.find(node);
-	if (it != mNodeHash.end()) {
-		for (int i = 0; i < it->children.count(); ++i) {
-			NodeHash::const_iterator child_it = mNodeHash.find(it->children[i]);
-			if (child_it == mNodeHash.end()) {
-				printf(" - %3d: %s (null)\n",
-				       i, it->children[i]->name);
-			} else {
-				printf(" - %3d: %s (%s[%d])\n",
-				       i, it->children[i]->name,
-				       child_it->parent ? child_it->parent->name : "<null>",
-				       child_it->row);
-			}
-		}
+	if (idx < (int)new_children.size()) {
+		beginInsertRows(p_index, idx, new_children.size() - 1);
+		item.children = new_children;
+		endInsertRows();
 	}
 }

@@ -13,8 +13,7 @@ MemPool<char> string_pool;
 MemPool<Node> NodePoolAlloc::pool;
 
 Node::Node(const char *n, size_t n_size) :
-	child(NULL), sibling(NULL), last_child(false),
-	is_new(true), has_new_children(false)
+	child(NULL), sibling(NULL), last_child(false), has_new_children(false)
 {
 	name = string_pool.alloc(n_size + 1);
 	memcpy(name, n, n_size);
@@ -105,29 +104,3 @@ Node *Node::insert_node(const char *path)
 
 	return cur_node;
 }
-
-#include <iostream>
-
-void Node::print_tree(const std::string &prefix) const
-{
-	std::cout << prefix << "+-" << name << std::endl;
-	Node *first_node = NULL;
-	for (Node *p = child; p; p = p->sibling) {
-		if (p->last_child) {
-			first_node = p->sibling;
-			break;
-		}
-	}
-	if (first_node) {
-		bool first = true;
-		for (Node *p = first_node; p != first_node || first; p = p->sibling) {
-			if (last_child) {
-				p->print_tree(prefix + "  ");
-			} else {
-				p->print_tree(prefix + "| ");
-			}
-			first = false;
-		}
-	}
-}
-

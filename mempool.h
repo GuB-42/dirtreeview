@@ -3,7 +3,7 @@
 
 #include <stdlib.h>
 
-template <class T, size_t BLOCK_SIZE = 1024 * 1024> class MemPool {
+template <class T, size_t BLOCK_SIZE = 256 * 1024> class MemPool {
 	struct MemPoolHeader {
 		MemPoolHeader *next;
 		size_t offset;

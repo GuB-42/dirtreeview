@@ -2,8 +2,8 @@
 #define TreeModel_h_
 
 #include <QAbstractItemModel>
-#include <QHash>
-#include <QVector>
+#include <unordered_map>
+#include <vector>
 
 class Node;
 class QMutex;
@@ -12,7 +12,7 @@ struct TreeModelItem {
 	explicit TreeModelItem(Node *p, int r) : parent(p), row(r) {};
 	Node *parent;
 	int row;
-	QVector<Node *> children;
+	std::vector<Node *> children;
 };
 
 class TreeModel : public QAbstractItemModel {
@@ -34,14 +34,11 @@ public slots:
 
 private:
 	void createItem(Node *parent, int row, Node *node);
-	void insertNodes(Node *node, TreeModelItem *item,
-	                 const QVector<Node *> &new_child_list, int idx);
 	void updateNode(Node *node);
-	void printItem(const Node *node) const;
 
 	Node *mRootNode;
 	QMutex *mNodeTreeMutex;
-	typedef QHash<const Node *, TreeModelItem> NodeHash;
+	typedef std::unordered_map<const Node *, TreeModelItem> NodeHash;
 	NodeHash mNodeHash;
 };
 
