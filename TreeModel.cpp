@@ -70,7 +70,9 @@ QModelIndex TreeModel::parent(const QModelIndex &index) const
 	NodeHash::const_iterator it = mNodeHash.find(node);
 	if (it == mNodeHash.end() || !it->second.parent ||
 	    it->second.parent == mRootNode) return QModelIndex();
-	return createIndex(it->second.row, 0, it->second.parent);
+	NodeHash::const_iterator it_parent = mNodeHash.find(it->second.parent);
+	if (it_parent == mNodeHash.end()) return QModelIndex();
+	return createIndex(it_parent->second.row, 0, it->second.parent);
 }
 
 QVariant TreeModel::data(const QModelIndex &index, int role) const
