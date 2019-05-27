@@ -2,6 +2,7 @@
 
 #include <QMutex>
 #include <QSet>
+#include <QTime>
 #include <stdio.h>
 #include "Node.h"
 
@@ -19,7 +20,10 @@ void ReaderThread::read_file(FILE *stream)
 	char *read_buf = (char *)malloc(read_buf_size);
 	char *read_p = read_buf;
 	char *next_p = read_p;
+	QTime t;
+	bool update_done = false;
 
+	t.start();
 	do {
 		size_t sz = fread(next_p, 1, read_buf_size - (next_p - read_buf) - 1, stream);
 		while (sz > 0) {
@@ -33,6 +37,7 @@ void ReaderThread::read_file(FILE *stream)
 					mNodeTreeMutex->lock();
 					mRootNode->insert_node(read_p);
 					mNodeTreeMutex->unlock();
+					update_done = true;
 				}
 				--sz;
 				read_p = ++next_p;
@@ -50,6 +55,11 @@ void ReaderThread::read_file(FILE *stream)
 				read_p = read_buf = new_read_buf;
 			}
 		}
+		if (update_done && t.elapsed() > 250) {
+			t.restart();
+			update_done = false;
+			emit treeUpdated();
+		}
 	} while (!feof(stream) && !ferror(stream));
 
 	if (next_p != read_p) {
@@ -57,11 +67,13 @@ void ReaderThread::read_file(FILE *stream)
 		mNodeTreeMutex->lock();
 		mRootNode->insert_node(read_p);
 		mNodeTreeMutex->unlock();
+		emit treeUpdated();
 	}
 
 	free(read_buf);
 }
 
 void ReaderThread::run() {
+
 	read_file(stdin);
 }

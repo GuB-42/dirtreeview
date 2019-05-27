@@ -17,14 +17,20 @@ MainApplication::MainApplication(int &argc, char *argv[]) :
 	mRootNode->last_child = true;
 	mRootNode->sibling = mRootNode;
 	readerThread = new ReaderThread(mRootNode, mNodeTreeMutex);
-	readerThread->start();
 	mainWindow = new MainWindow(mRootNode, mNodeTreeMutex);;
+	connect(readerThread, SIGNAL(treeUpdated()), mainWindow, SLOT(updateTree()));
+	connect(readerThread, SIGNAL(finished()), mainWindow, SLOT(treeComplete()));
+	readerThread->start();
 	mainWindow->show();
 }
 
 MainApplication::~MainApplication()
 {
 	delete mainWindow;
+	if (readerThread->isRunning()) {
+		readerThread->terminate();
+		readerThread->wait(2000);
+	}
 	delete readerThread;
 	delete mRootNode;
 	delete mNodeTreeMutex;

@@ -11,7 +11,7 @@ public:
 	             QObject *parent = NULL);
 
 signals:
-	void nodeUpdated(Node *node);
+	void treeUpdated();
 
 protected:
 	void run();

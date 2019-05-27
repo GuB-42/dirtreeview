@@ -5,7 +5,7 @@
 
 class Node;
 class QMutex;
-class QTimer;
+class QProgressBar;
 class TreeModel;
 
 namespace Ui {
@@ -18,10 +18,14 @@ public:
 	                    QWidget *parent = NULL);
 	virtual ~MainWindow();
 
+public slots:
+	void updateTree();
+	void treeComplete();
+
 private:
 	Ui::MainWindow *ui;
+	QProgressBar *progressBar;
 	TreeModel *treeModel;
-	QTimer *updateTimer;
 };
 
 #endif
